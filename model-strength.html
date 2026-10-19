@@ -1,0 +1,866 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>模型选择 + 推理强度</title>
+<style>
+  /* ============================================================
+     设计变量：所有颜色 / 尺寸 / 动效集中在这里
+     ============================================================ */
+  :root {
+    /* ---- 页面 ---- */
+    --page-bg: #f5f6f8;
+    --font: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+            "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+
+    /* ---- 卡片（弹出面板） ---- */
+    --card-w: 320px;
+    --card-bg: #ffffff;
+    --card-radius: 20px;
+    --card-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+    --card-pad-y: 16px;
+    --card-pad-x: 20px;
+
+    /* ---- 顶部模型按钮 / 胶囊 ---- */
+    --pill-bg: #f0f1f3;
+    --pill-bg-hover: #e9ebee;
+    --press-bg: #e9ebee;           /* 触摸/按住统一的按下变色（胶囊与选项行共用） */
+    --pill-radius: 16px;
+    --pill-pad-y: 10px;
+    --pill-pad-x: 28px;
+    --fs-label: 15px;
+    --level-color: #3b82f6;        /* 非 Off 档位名 */
+    --level-off-color: #9ca3af;    /* Off 档位名 */
+    --level-max-color: #924ff7;    /* Max 档位名（紫色） */
+    --model-color: #6b7280;        /* 模型名 */
+    --arrow-color: #9ca3af;        /* 箭头 › */
+
+    /* ---- 模型下拉面板 ---- */
+    --dropdown-w: 280px;
+    --dropdown-bg: #ffffff;
+    --dropdown-radius: 16px;
+    --dropdown-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+    --dropdown-title-color: #9ca3af;
+    --dropdown-title-size: 12px;
+    --option-h: 44px;
+    --option-pad-x: 20px;
+    --option-size: 15px;
+    --option-color: #374151;
+    --option-hover-bg: #f3f4f6;
+    --check-color: #374151;        /* 与截图一致：选中项勾选为深灰 */
+
+    /* ---- 推理强度滑块 ---- */
+    --track-h: 20px;
+    --track-radius: 999px;         /* 轨道 / 填充的胶囊圆角 */
+    --track-bg: #e2e4e8;
+    --fill-color: #2f6fed;
+    --thumb-size: 28px;
+    --thumb-bg: #ffffff;
+    --thumb-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+    --thumb-shadow-active: 0 2px 10px rgba(0, 0, 0, 0.3);
+    --dot-size: 5px;
+    --dot-color: #c6c9cf;          /* 未覆盖的刻度点 */
+    --dot-color-on: #1d4ed8;       /* 被蓝色填充覆盖后的刻度点 */
+    --slider-gap: 14px;
+
+    /* ---- 动效 ---- */
+    --fade: 150ms;                 /* 淡入淡出 */
+    --snap: 200ms;                 /* 吸附 / 点击轨道过渡 */
+
+    /* ---- Max 档星空动效 ---- */
+    --max-fx-fade: 250ms;          /* 特效进出淡入淡出 */
+    --max-grad-stop-1: var(--fill-color); /* 首 stop 保证与纯蓝无缝 */
+    --max-grad-stop-2: #5a4bf0;    /* 34% */
+    --max-grad-stop-3: #7c3ff0;    /* 62% */
+    --max-grad-stop-4: #4a1fb8;    /* 100% */
+    --max-nebula-blur: 8px;        /* 星云光斑虚化 */
+    --max-sweep-opacity: 0.22;     /* 扫光带透明度 */
+  }
+
+  /* ---- 深色模式（跟随系统；配色对齐 ChatGPT 深色 / 皮肤插件的深色层） ---- */
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --page-bg: #212121;
+      --card-bg: #2f2f2f;
+      --card-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+      --pill-bg: #3a3a3a;
+      --pill-bg-hover: #454545;
+      --press-bg: #454545;         /* 深色下统一的按下变色 */
+      --level-color: #6ea8fe;        /* 深色下蓝提亮一档保证对比度 */
+      --level-off-color: #8f8f8f;
+      --model-color: #b4b4b4;
+      --arrow-color: #8f8f8f;
+      --dropdown-bg: #2f2f2f;
+      --dropdown-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+      --option-color: #ececec;
+      --option-hover-bg: #3a3a3a;
+      --check-color: #ececec;
+      --track-bg: #424242;
+      --dot-color: #5a5a5a;
+      --dot-color-on: #1e3a8a;
+      /* Max 档深色微调：末段加深一档，扫光透明度减半 */
+      --max-grad-stop-4: #3b1a8f;
+      --max-sweep-opacity: 0.11;
+    }
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body { height: 100%; }
+
+  body {
+    background: var(--page-bg);
+    font-family: var(--font);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    -webkit-font-smoothing: antialiased;
+    user-select: none;
+  }
+
+  /* 整体组件：卡片 */
+  .stage {
+    width: var(--card-w);
+  }
+
+  /* ============================ 卡片 ============================ */
+  .card {
+    position: relative;
+    width: var(--card-w);
+    background: var(--card-bg);
+    border-radius: var(--card-radius);
+    box-shadow: var(--card-shadow);
+    padding: var(--card-pad-y) var(--card-pad-x);
+  }
+
+  /* ====================== 顶部模型按钮 ====================== */
+  .top { position: relative; }
+
+  .model-btn {
+    display: block;
+    width: 100%;
+    border: 0;
+    background: none;
+    padding: 0;
+    font: inherit;
+    cursor: pointer;
+    touch-action: none;           /* 禁止浏览器接管手势：手指抖动不再触发 pointercancel 撤销变色 */
+  }
+
+  /* 胶囊底色恒定：任何档位都保持 Off 档的无胶囊外观，
+     仅按下（鼠标按住/手指触摸）时临时变色，松开恢复 */
+  .pill {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: var(--pill-pad-y) var(--pill-pad-x);
+    border-radius: var(--pill-radius);
+    background: transparent;
+    transition: background var(--fade);
+  }
+  .model-btn:active .pill,
+  .model-btn.pressed .pill {
+    background: var(--press-bg);
+    transition: none;             /* 按下立即显色（不走 150ms 渐入），快速点触也能看到 */
+  }
+
+  .level-label {
+    font-size: var(--fs-label);
+    font-weight: 700;
+    color: var(--level-color);
+    transition: opacity var(--fade), color var(--fade);   /* 档位标签 150ms 淡入淡出 */
+  }
+  .pill.is-off .level-label { color: var(--level-off-color); }
+  .pill.is-max .level-label { color: var(--level-max-color); }
+
+  .model-label {
+    font-size: var(--fs-label);
+    color: var(--model-color);
+    white-space: nowrap;
+  }
+  .arrow { color: var(--arrow-color); }
+  .pill.is-off .arrow { color: var(--model-color); }
+
+  /* ====================== 模型下拉面板 ====================== */
+  .dropdown {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    right: 0;
+    z-index: 30;
+    background: var(--dropdown-bg);
+    border-radius: var(--dropdown-radius);
+    box-shadow: var(--dropdown-shadow);
+    padding: 10px 0 8px;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity var(--fade), visibility var(--fade);  /* 150ms 淡入 */
+  }
+  .dropdown.open { opacity: 1; visibility: visible; }
+
+  .dropdown-title {
+    font-size: var(--dropdown-title-size);
+    color: var(--dropdown-title-color);
+    padding: 2px var(--option-pad-x) 8px;
+  }
+
+  .option {
+    position: relative;
+    display: flex;
+    align-items: center;
+    height: var(--option-h);
+    padding: 0 var(--option-pad-x);
+    font-size: var(--option-size);
+    color: var(--option-color);
+    cursor: pointer;
+    touch-action: none;           /* 禁止浏览器接管手势，触摸按下稳定变色 */
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  /* 选项行同样只在按下（点击/触摸）时变色；.pressed 为触摸可靠版 */
+  .option:active,
+  .option.pressed { background: var(--press-bg); }
+  .option .check {
+    position: absolute;
+    right: var(--option-pad-x);
+    color: var(--check-color);
+    font-size: 14px;
+  }
+
+  /* ========================= 推理强度滑块 ========================= */
+  .slider {
+    position: relative;
+    height: var(--thumb-size);
+    margin-top: var(--slider-gap);
+    cursor: pointer;
+    touch-action: none;            /* 允许 pointer 拖拽 */
+    outline: none;
+  }
+
+  .track {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    height: var(--track-h);
+    border-radius: var(--track-radius);
+    background: var(--track-bg);
+    overflow: hidden;
+  }
+
+  /* 蓝色填充：宽度 = 拇指左缘位置（截图实测：填充止于拇指左缘，连续跟随拇指）
+     行程内嵌：拇指中心只在 [半径, 轨道宽-半径] 之间移动，两端拇指完全落在轨道内 */
+  .fill {
+    position: absolute;
+    inset: 0;
+    width: calc((100% - var(--thumb-size)) * var(--pctn, 0));
+    background: var(--fill-color);
+    border-radius: var(--track-radius);
+    overflow: hidden;
+    transition: width var(--snap);
+  }
+
+  /* 刻度圆点层：基础层灰色；覆盖层深蓝，用 clip-path 裁剪到填充范围内 */
+  .dots {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+  }
+  .dots--on {
+    clip-path: inset(0 calc(100% - (100% - var(--thumb-size)) * var(--pctn, 0)) 0 0);
+    transition: clip-path var(--snap), opacity var(--max-fx-fade);
+  }
+  /* Max 档时深蓝刻度点同步淡出，避免压在星空渐变上 */
+  .slider.level-max .dots--on { opacity: 0; }
+
+  .dot {
+    position: absolute;
+    top: 50%;
+    /* 刻度点落在档位位置（= 该档拇指中心），被选中时自然被拇指遮住 */
+    left: calc((100% - var(--thumb-size)) * var(--posn, 0) + var(--thumb-size) / 2);
+    width: var(--dot-size);
+    height: var(--dot-size);
+    border-radius: 50%;
+    background: var(--dot-color);
+    transform: translate(-50%, -50%);
+  }
+  .dots--on .dot { background: var(--dot-color-on); }
+
+  /* 白色拇指：中心行程内嵌于轨道（两端不悬出轨道外，与截图一致） */
+  .thumb {
+    position: absolute;
+    top: 50%;
+    left: calc((100% - var(--thumb-size)) * var(--pctn, 0) + var(--thumb-size) / 2);
+    width: var(--thumb-size);
+    height: var(--thumb-size);
+    border-radius: 50%;
+    background: var(--thumb-bg);
+    box-shadow: var(--thumb-shadow);
+    transform: translate(-50%, -50%);
+    transition: left var(--snap), box-shadow var(--fade);
+    cursor: grab;
+  }
+
+  /* 拖动过程中：取消过渡、投影加深（刻度点透明度保持平滑过渡） */
+  .slider.dragging .fill,
+  .slider.dragging .thumb { transition: none; }
+  .slider.dragging .dots--on { transition: clip-path 0s, opacity var(--max-fx-fade); }
+  .slider.dragging .thumb {
+    box-shadow: var(--thumb-shadow-active);
+    cursor: grabbing;
+  }
+  .slider:focus-visible .thumb { box-shadow: var(--thumb-shadow-active); }
+
+  /* ==================== Max 档专属星空动效 ====================
+     填充块上叠加 4 层，全部只在 Max 档显示，进出用 250ms opacity 淡入淡出。
+     性能约束：所有动画仅操作 transform 与 opacity。 */
+  .max-fx {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity var(--max-fx-fade);
+  }
+  .slider.level-max .max-fx { opacity: 1; }
+
+  /* 1. 底层渐变：首 stop 为 --fill-color，保证与纯蓝无缝淡入 */
+  .max-fx-grad {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      90deg,
+      var(--max-grad-stop-1) 0%,
+      var(--max-grad-stop-2) 34%,
+      var(--max-grad-stop-3) 62%,
+      var(--max-grad-stop-4) 100%
+    );
+  }
+
+  /* 2. 星云光斑 ×2：白/淡紫径向渐变圆，沿 X 轴缓慢游移 */
+  .max-fx-nebula {
+    position: absolute;
+    top: 50%;
+    border-radius: 50%;
+    filter: blur(var(--max-nebula-blur));
+    mix-blend-mode: screen;
+    pointer-events: none;
+  }
+  .max-fx-nebula.nebula-1 {
+    left: 20%;
+    width: 28px;
+    height: 28px;
+    background: radial-gradient(circle, rgba(255, 255, 255, 0.75) 0%, rgba(200, 180, 255, 0.45) 45%, transparent 75%);
+    animation: maxNebula1 9s ease-in-out infinite alternate;
+  }
+  .max-fx-nebula.nebula-2 {
+    left: 65%;
+    width: 22px;
+    height: 22px;
+    background: radial-gradient(circle, rgba(255, 255, 255, 0.65) 0%, rgba(175, 140, 255, 0.4) 45%, transparent 75%);
+    animation: maxNebula2 12s ease-in-out infinite alternate;
+  }
+  @keyframes maxNebula1 {
+    0%   { transform: translateY(-50%) translateX(-18px); }
+    100% { transform: translateY(-50%) translateX(22px); }
+  }
+  @keyframes maxNebula2 {
+    0%   { transform: translateY(-50%) translateX(16px); }
+    100% { transform: translateY(-50%) translateX(-20px); }
+  }
+
+  /* 3. 星点层：整层叠加 ±5px、16s 的 translateX 慢漂移 */
+  .max-fx-stars {
+    position: absolute;
+    inset: 0;
+    animation: maxStarsDrift 16s ease-in-out infinite alternate;
+  }
+  @keyframes maxStarsDrift {
+    0%   { transform: translateX(-5px); }
+    100% { transform: translateX(5px); }
+  }
+  .max-star {
+    position: absolute;
+    border-radius: 50%;
+    background: #ffffff;
+    transform: translate(-50%, -50%);
+    animation-name: maxStarTwinkle;
+    animation-timing-function: ease-in-out;
+    animation-iteration-count: infinite;
+    animation-direction: alternate;
+  }
+  .max-star.glow {
+    box-shadow: 0 0 6px 2px rgba(255, 255, 255, 0.55);
+  }
+  @keyframes maxStarTwinkle {
+    0%   { opacity: var(--star-min-op, 0.3); }
+    100% { opacity: var(--star-max-op, 0.85); }
+  }
+
+  /* 4. 扫光：宽约轨道 1/3、skewX(-12deg) 白色半透明高光带，7s 周期从左向右 */
+  .max-fx-sweep {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 35%;
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      rgba(255, 255, 255, var(--max-sweep-opacity)) 50%,
+      transparent 100%
+    );
+    animation: maxSweep 7s linear infinite;
+  }
+  @keyframes maxSweep {
+    0%, 55% {
+      transform: translateX(-160%) skewX(-12deg);
+      opacity: 0;
+    }
+    56% {
+      opacity: 1;
+    }
+    100% {
+      transform: translateX(360%) skewX(-12deg);
+      opacity: 1;
+    }
+  }
+
+  /* 减弱动态偏好：停掉动画，只留静态渐变与静态星点 */
+  @media (prefers-reduced-motion: reduce) {
+    .max-fx-nebula,
+    .max-fx-stars,
+    .max-star,
+    .max-fx-sweep {
+      animation: none !important;
+    }
+    .max-star {
+      opacity: var(--star-max-op, 0.85);
+    }
+  }
+</style>
+</head>
+<body>
+
+<div class="stage">
+  <!-- 弹出面板（模型选择 + 推理强度） -->
+  <section class="card">
+    <!-- 顶部模型按钮（点击打开模型下拉） -->
+    <div class="top">
+      <button class="model-btn" id="modelBtn" type="button" aria-haspopup="listbox" aria-expanded="false">
+        <span class="pill" id="pill">
+          <span class="level-label" id="levelLabel">Medium</span>
+          <span class="model-label"><span id="modelName">MiMo-V2.6-Pro</span><span class="arrow"> ›</span></span>
+        </span>
+      </button>
+
+      <!-- 模型下拉面板 -->
+      <div class="dropdown" id="dropdown" role="listbox" aria-label="选择模型">
+        <div class="dropdown-title">选择模型</div>
+        <div id="dropdownList"></div>
+      </div>
+    </div>
+
+    <!-- 推理强度滑块 -->
+    <div class="slider" id="slider" tabindex="0" role="slider" aria-label="推理强度">
+      <div class="track">
+        <div class="fill" id="fill">
+          <!-- Max 档专属星空特效（4层） -->
+          <div class="max-fx" id="maxFx" aria-hidden="true">
+            <div class="max-fx-grad"></div>
+            <div class="max-fx-nebula nebula-1"></div>
+            <div class="max-fx-nebula nebula-2"></div>
+            <div class="max-fx-stars" id="maxStars"></div>
+            <div class="max-fx-sweep"></div>
+          </div>
+        </div>
+        <div class="dots" id="dotsBase"></div>
+        <div class="dots dots--on" id="dotsOn"></div>
+      </div>
+      <div class="thumb" id="thumb"></div>
+    </div>
+  </section>
+</div>
+
+<script>
+/* ============================================================
+ * 数据源：所有文字（模型名、档位名）均由这里渲染，禁止硬编码
+ * 模型族 → 档位表：同族模型共用一份档位，改 FAMILIES 一处即全局生效
+ * ============================================================ */
+const FAMILIES = {
+  deepseek: ["Off", "Low", "High", "Max"],
+  mimo:     ["Off", "Low", "Medium", "High"],
+};
+
+const MODELS = [
+  { name: "DeepSeek-V4-Flash",        levels: FAMILIES.deepseek },
+  { name: "DeepSeek-V4-Pro",          levels: FAMILIES.deepseek },
+  { name: "MiMo-V2.6-Pro",            levels: FAMILIES.mimo },
+  { name: "MiMo-V2.6-Flash",          levels: FAMILIES.mimo },
+  { name: "MiMo-V2.6-Pro-UltraSpeed", levels: FAMILIES.mimo },
+];
+
+/* ---------------------- 状态 ---------------------- */
+let modelIndex = 2;   // 默认选中 MiMo-V2.6-Pro（与截图一致）
+let levelIndex = 2;   // 当前档位序号（切换模型时保留，必要时 clamp）
+
+/* ---------------------- DOM 引用 ---------------------- */
+const modelBtn    = document.getElementById("modelBtn");
+const pill        = document.getElementById("pill");
+const levelLabel  = document.getElementById("levelLabel");
+const modelName   = document.getElementById("modelName");
+const dropdown    = document.getElementById("dropdown");
+const dropdownList= document.getElementById("dropdownList");
+const slider      = document.getElementById("slider");
+const dotsBase    = document.getElementById("dotsBase");
+const dotsOn      = document.getElementById("dotsOn");
+const thumb       = document.getElementById("thumb");
+const maxStars    = document.getElementById("maxStars");
+
+/* ---------------------- 工具函数 ---------------------- */
+const clamp = (v, min, max) => Math.min(max, Math.max(min, v));
+const currentModel  = () => MODELS[modelIndex];
+const currentLevels = () => MODELS[modelIndex].levels;
+
+/** 档位在拇指行程上的比例（0~1）：4 档 = 0 / 0.333 / 0.667 / 1
+ *  再由 CSS 映射到轨道内嵌行程（两端拇指不悬出轨道） */
+function levelPercent(i) {
+  const n = currentLevels().length;
+  return n <= 1 ? 0 : i / (n - 1);
+}
+
+/** 由 0~1 的比例找到最近的档位序号 */
+function nearestLevel(fraction) {
+  const n = currentLevels().length;
+  if (n <= 1) return 0;
+  return clamp(Math.round(fraction * (n - 1)), 0, n - 1);
+}
+
+/* ---------------------- 渲染 ---------------------- */
+
+/** 档位标签 150ms 淡入淡出切换（Max 档同步变为紫色） */
+let fadeTimer = null;
+function setLevelLabel(text, isMax) {
+  if (levelLabel.textContent === text) {
+    pill.classList.toggle("is-max", isMax);
+    return;
+  }
+  levelLabel.style.opacity = "0";
+  clearTimeout(fadeTimer);
+  fadeTimer = setTimeout(() => {
+    pill.classList.toggle("is-max", isMax);
+    levelLabel.textContent = text;
+    levelLabel.style.opacity = "1";
+  }, 150);
+}
+
+/** 顶部：档位名 + 模型名（Off 档取消胶囊背景，Max 档文字变紫色） */
+function renderTop(fade) {
+  const model = currentModel();
+  const levels = currentLevels();
+  const isOff = levelIndex === 0;
+  const isMax = levels[levelIndex] === "Max";
+
+  pill.classList.toggle("is-off", isOff);
+  if (fade) {
+    setLevelLabel(levels[levelIndex], isMax);
+  } else {
+    clearTimeout(fadeTimer);
+    pill.classList.toggle("is-max", isMax);
+    levelLabel.style.opacity = "1";
+    levelLabel.textContent = levels[levelIndex];
+  }
+  modelName.textContent = model.name;
+}
+
+/** 同步滑块的 aria 状态（读屏可感知当前档位） */
+function syncAria() {
+  const n = currentLevels().length;
+  slider.setAttribute("aria-valuemin", "0");
+  slider.setAttribute("aria-valuemax", String(n - 1));
+  slider.setAttribute("aria-valuenow", String(levelIndex));
+  slider.setAttribute(
+    "aria-valuetext",
+    `${currentLevels()[levelIndex]}（${levelIndex + 1}/${n}）`,
+  );
+}
+
+/** 刻度圆点：除两端外每个档位一个 5px 圆点（由档位数量决定） */
+function renderDots() {
+  dotsBase.innerHTML = "";
+  dotsOn.innerHTML = "";
+  const n = currentLevels().length;
+  for (let i = 1; i < n - 1; i++) {
+    const p = levelPercent(i);
+    [dotsBase, dotsOn].forEach((layer) => {
+      const dot = document.createElement("span");
+      dot.className = "dot";
+      dot.style.setProperty("--posn", p);   // 位置由 CSS calc 映射到该档拇指中心
+      layer.appendChild(dot);
+    });
+  }
+}
+
+/** 更新滑块填充 / 拇指 / 覆盖层裁剪位置（fraction 0~1） */
+function setPercent(fraction) {
+  slider.style.setProperty("--pctn", fraction);
+}
+
+/** Max 档专属特效开关：当且仅当当前档位为 Max 时开启 */
+function updateMaxFx() {
+  const isMax = currentLevels()[levelIndex] === "Max";
+  slider.classList.toggle("level-max", isMax);
+}
+
+/** 一次性初始化 Max 档星点（约 30 颗，互不同步闪烁，生成后不再重建） */
+function initMaxStars() {
+  if (!maxStars) return;
+  maxStars.innerHTML = "";
+  const STAR_COUNT = 30;
+  const glowIndices = new Set([5, 14, 23]); // 挑选 3 颗大星加辉光
+
+  for (let i = 0; i < STAR_COUNT; i++) {
+    const star = document.createElement("span");
+    star.className = "max-star";
+    if (glowIndices.has(i)) {
+      star.classList.add("glow");
+    }
+
+    // 水平 2%~98%、垂直 15%~85%
+    const x = (2 + Math.random() * 96).toFixed(2);
+    const y = (15 + Math.random() * 70).toFixed(2);
+    // 尺寸 1~2.5px，大星略大
+    const size = glowIndices.has(i)
+      ? (2.0 + Math.random() * 0.5).toFixed(1)
+      : (1.0 + Math.random() * 1.2).toFixed(1);
+
+    // 2.2~5.5s 随机周期、随机负延迟
+    const dur = +(2.2 + Math.random() * 3.3).toFixed(2);
+    const delay = +(-(Math.random() * dur)).toFixed(2);
+    // 基准透明度 0.65~1.0，闪烁在 0.35x 与 1.0 之间
+    const baseOp = +(0.65 + Math.random() * 0.35).toFixed(2);
+
+    star.style.left = `${x}%`;
+    star.style.top = `${y}%`;
+    star.style.width = `${size}px`;
+    star.style.height = `${size}px`;
+    star.style.setProperty("--star-base-op", baseOp);
+    star.style.setProperty("--star-min-op", +(baseOp * 0.35).toFixed(2));
+    star.style.setProperty("--star-max-op", baseOp);
+    star.style.animationDuration = `${dur}s`;
+    star.style.animationDelay = `${delay}s`;
+
+    maxStars.appendChild(star);
+  }
+}
+
+/** 整体重绘 */
+function renderAll() {
+  renderTop(false);
+  syncAria();
+  renderDots();
+  setPercent(levelPercent(levelIndex));
+  updateMaxFx();
+}
+
+/* ---------------------- 按压高亮（触摸可靠版） ----------------------
+ * :active 在部分触摸环境下不触发或延迟，这里用 pointer 事件显式切换 .pressed：
+ * 手指按住"模型下拉面板"（顶部胶囊 / 选项行）时同样变色，松开恢复。 */
+function bindPressHighlight(el) {
+  const on = () => el.classList.add("pressed");
+  const off = () => el.classList.remove("pressed");
+  el.addEventListener("pointerdown", on);
+  ["pointerup", "pointercancel", "pointerleave"].forEach((ev) =>
+    el.addEventListener(ev, off)
+  );
+  /* 触摸兜底：个别环境 pointer 事件对触摸不可靠，touch 事件双保险 */
+  el.addEventListener("touchstart", on, { passive: true });
+  ["touchend", "touchcancel"].forEach((ev) => el.addEventListener(ev, off));
+}
+bindPressHighlight(modelBtn);
+
+/* ---------------------- 模型下拉 ---------------------- */
+function buildDropdown() {
+  dropdownList.innerHTML = "";
+  MODELS.forEach((m, idx) => {
+    const row = document.createElement("div");
+    row.className = "option";
+    row.setAttribute("role", "option");
+    bindPressHighlight(row);
+    const name = document.createElement("span");
+    name.textContent = m.name;                 // 文字完全来自 MODELS
+    row.appendChild(name);
+    if (idx === modelIndex) {
+      const check = document.createElement("span");
+      check.className = "check";
+      check.textContent = "✓";
+      row.appendChild(check);
+    }
+    row.addEventListener("click", () => {
+      // 切换模型：保留档位序号，档位变少时 clamp 到最高档
+      modelIndex = idx;
+      levelIndex = Math.min(levelIndex, currentLevels().length - 1);
+      renderAll();
+      closeDropdown();
+    });
+    dropdownList.appendChild(row);
+  });
+}
+
+function openDropdown() {
+  buildDropdown();
+  dropdown.classList.add("open");
+  modelBtn.setAttribute("aria-expanded", "true");
+}
+
+function closeDropdown() {
+  dropdown.classList.remove("open");
+  modelBtn.setAttribute("aria-expanded", "false");
+}
+
+const isDropdownOpen = () => dropdown.classList.contains("open");
+
+modelBtn.addEventListener("click", (e) => {
+  e.stopPropagation();
+  isDropdownOpen() ? closeDropdown() : openDropdown();
+});
+
+// 点击面板外部区域收起
+document.addEventListener("pointerdown", (e) => {
+  if (!isDropdownOpen()) return;
+  if (dropdown.contains(e.target) || modelBtn.contains(e.target)) return;
+  closeDropdown();
+});
+
+// 快捷键 Ctrl+Shift+M 呼出 / 收起模型下拉
+document.addEventListener("keydown", (e) => {
+  if (e.ctrlKey && e.shiftKey && (e.key === "M" || e.key === "m")) {
+    e.preventDefault();
+    isDropdownOpen() ? closeDropdown() : openDropdown();
+  } else if (e.key === "Escape") {
+    closeDropdown();
+  }
+});
+
+/* ---------------------- 滑块拖动 / 吸附 ---------------------- */
+const DRAG_THRESHOLD = 10;  // 判定为拖动的像素阈值（提高到 10px，避免点击与松开时的微抖被误判为拖拽）
+let pointerId = null;
+let startX = 0;
+let startY = 0;
+let dragging = false;
+let grabOffsetX = 0;        // 抓取拇指时的触点偏心偏移量（避免拖拽启动瞬间拇指跳变居中）
+
+/** 由指针事件换算拇指行程上的 0~1 比例（行程内嵌于轨道，支持触点偏移补偿） */
+function fractionFromEvent(e, offset = 0) {
+  const rect = slider.getBoundingClientRect();
+  const r = thumb.offsetWidth / 2;
+  const denom = rect.width - 2 * r;
+  return denom > 0 ? clamp((e.clientX - offset - rect.left - r) / denom, 0, 1) : 0;
+}
+
+/** 拖动中：填充连续跟随拇指，标签按最近档位实时切换 */
+function applyFractionDuringDrag(fraction) {
+  setPercent(fraction);
+  const nearest = nearestLevel(fraction);
+  if (nearest !== levelIndex) {
+    levelIndex = nearest;
+    renderTop(true);      // 顶部标签 150ms 淡入淡出
+    syncAria();           // 读屏 aria 状态同步
+    updateMaxFx();        // 档位变化时同步 Max 特效开关
+  }
+}
+
+/** 吸附到指定档位（带 200ms 过渡） */
+function snapToLevel(index) {
+  levelIndex = index;
+  setPercent(levelPercent(index));
+  renderTop(true);
+  syncAria();
+  updateMaxFx();
+}
+
+slider.addEventListener("pointerdown", (e) => {
+  if (e.button !== 0 || pointerId !== null) return;
+  e.preventDefault();
+  closeDropdown();
+  pointerId = e.pointerId;
+  startX = e.clientX;
+  startY = e.clientY;
+  dragging = false;
+  slider.setPointerCapture(pointerId);
+
+  // 计算是否直接按在拇指上，并记录触点相对于拇指中心的偏心量
+  const thumbRect = thumb.getBoundingClientRect();
+  const thumbCenterX = thumbRect.left + thumbRect.width / 2;
+  const distFromThumb = Math.abs(e.clientX - thumbCenterX);
+  const onThumb = e.target === thumb || distFromThumb <= thumbRect.width / 2;
+
+  grabOffsetX = onThumb ? (e.clientX - thumbCenterX) : 0;
+
+  // 点击轨道空白处（非拇指）：拇指平滑过渡吸附到对应档位，并更新触点偏心量
+  if (!onThumb) {
+    const targetIdx = nearestLevel(fractionFromEvent(e, 0));
+    snapToLevel(targetIdx);
+    const rect = slider.getBoundingClientRect();
+    const r = thumb.offsetWidth / 2;
+    const denom = rect.width - 2 * r;
+    const newThumbCenterX = rect.left + r + denom * levelPercent(targetIdx);
+    grabOffsetX = e.clientX - newThumbCenterX;
+  }
+});
+
+slider.addEventListener("pointermove", (e) => {
+  if (pointerId !== e.pointerId) return;
+  if (!dragging) {
+    // 超过阈值才真正进入连续拖拽模式，彻底避免普通点击时因微小手抖触发跳动
+    if (Math.hypot(e.clientX - startX, e.clientY - startY) < DRAG_THRESHOLD) return;
+    dragging = true;
+    slider.classList.add("dragging");   // 拖动中取消过渡、加深投影
+  }
+  applyFractionDuringDrag(fractionFromEvent(e, grabOffsetX));
+});
+
+function endDrag(e) {
+  if (pointerId !== e.pointerId) return;
+  if (slider.hasPointerCapture(pointerId)) slider.releasePointerCapture(pointerId);
+  slider.classList.remove("dragging");
+
+  if (dragging) {
+    // 真正发生拖动后松手：吸附到最近档位
+    snapToLevel(nearestLevel(fractionFromEvent(e, grabOffsetX)));
+  }
+  dragging = false;
+  pointerId = null;
+  grabOffsetX = 0;
+}
+slider.addEventListener("pointerup", endDrag);
+slider.addEventListener("pointercancel", endDrag);
+
+/* 键盘左右键微调档位（可访问性） */
+slider.addEventListener("keydown", (e) => {
+  const n = currentLevels().length;
+  if (e.key === "ArrowLeft" || e.key === "ArrowDown") {
+    e.preventDefault();
+    snapToLevel(clamp(levelIndex - 1, 0, n - 1));
+  } else if (e.key === "ArrowRight" || e.key === "ArrowUp") {
+    e.preventDefault();
+    snapToLevel(clamp(levelIndex + 1, 0, n - 1));
+  } else if (e.key === "Home") {
+    e.preventDefault();
+    snapToLevel(0);
+  } else if (e.key === "End") {
+    e.preventDefault();
+    snapToLevel(n - 1);
+  }
+});
+
+/* ---------------------- 启动 ---------------------- */
+initMaxStars();
+renderAll();
+</script>
+</body>
+</html>
